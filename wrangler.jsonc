@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chomthong-school-supplies",
+  "account_id": "b20270559daf6d8d48c3a649fd13ad32",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-03-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "chomthong-school-supplies" }],
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "chomthong-school-supplies",
+    "database_id": "efe07910-498b-434e-89d9-55bf38275138",
+    "migrations_dir": "migrations"
+  }],
+  "vars": {
+    "ADMIN_USERNAME": "cboonta",
+    "ADMIN_FULL_NAME": "นายชลนที บุญทา",
+    "ADMIN_ROLE": "superadmin",
+    "ADVISOR_GRADE": "ม.3",
+    "ADVISOR_ROOM": "4",
+    "BUDGET_LOWER": "260",
+    "BUDGET_UPPER": "260"
+  },
+  "observability": { "enabled": true }
+}

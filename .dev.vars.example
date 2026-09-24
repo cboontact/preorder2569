@@ -1,0 +1,2 @@
+NEXTJS_ENV=development
+ADMIN_PASSWORD=replace-with-a-long-local-password

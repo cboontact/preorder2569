@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.open-next/
+.wrangler/
+.dev.vars
+.env*
+!.env.example
+*.tsbuildinfo
+legacy/
+data/
+backups/
+test-results/
+*.xlsx
