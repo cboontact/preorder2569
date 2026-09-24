@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Printer } from "./icons";
 import type { Order } from "@/lib/types";
 import { money, orderNumber } from "@/lib/types";
-export function Receipt({ order }: { order: Order }) {
+export function Receipt({ order, onPrint }: { order: Order; onPrint?: () => void }) {
   return <div>
     <header className="mb-4 border-b border-slate-200 pb-4">
       <div className="flex items-center gap-3 pr-7 print:pr-0">
@@ -30,6 +30,6 @@ export function Receipt({ order }: { order: Order }) {
     </table></div>
     {!!order.unused_budget_acknowledged && <p className="mt-5 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">นักเรียนยืนยันรับทราบการเสียสิทธิ์ในส่วนที่เหลือ {money(order.budget - order.total_amount)} บาทแล้ว</p>}
     <div className="mt-10 hidden justify-between print:flex"><span>ผู้รับอุปกรณ์ ....................................</span><span>ผู้จ่ายอุปกรณ์ ....................................</span></div>
-    <div className="no-print mt-7 flex justify-end"><button className="btn" onClick={() => window.print()}><Printer size={18} />พิมพ์ใบสั่งซื้อ</button></div>
+    <div className="no-print mt-7 flex justify-end"><button className="btn" onClick={() => { window.print(); onPrint?.(); }}><Printer size={18} />พิมพ์ใบสั่งซื้อ</button></div>
   </div>;
 }
