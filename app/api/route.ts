@@ -16,7 +16,7 @@ const roomSchema = z.string().regex(/^[1-9]\d?$/);
 const usernameSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,40}$/);
 const studentSchema = z.object({ student_id: studentIdSchema, prefix: z.string().max(50), first_name: z.string().trim().min(2).max(120), last_name: z.string().trim().min(1).max(120), grade: gradeSchema, room: roomSchema });
 const advisorRoomsSchema = z.array(z.object({ grade: gradeSchema, room: roomSchema })).min(1).max(100).refine(rooms => new Set(rooms.map(r => `${r.grade}/${r.room}`)).size === rooms.length, "ห้องที่ปรึกษาซ้ำกัน");
-const studentFilterSchema = z.object({ grade: gradeSchema.optional(), room: roomSchema.optional(), status: z.enum(["ordered","pending"]).optional(), query: z.string().trim().max(120).default("") });
+const studentFilterSchema = z.object({ grade: gradeSchema.optional(), room: roomSchema.optional(), status: z.enum(["ordered","pending"]).optional(), incomplete: z.boolean().optional(), query: z.string().trim().max(120).default("") });
 const teacherSchema = z.object({ full_name: z.string().trim().min(2).max(200), advisor_grade: gradeSchema, advisor_room: roomSchema, advisor_rooms: advisorRoomsSchema.optional(), active: z.boolean().default(true), password: z.string().min(8).max(256).optional() });
 const termSchema = z.object({ academic_year: z.number().int().min(2500).max(2700), semester: z.union([z.literal(1),z.literal(2)]), opens_at: z.iso.datetime({ offset: true }), closes_at: z.iso.datetime({ offset: true }), enabled: z.boolean(), announcement: z.string().trim().max(500).default("") }).refine(t => Date.parse(t.opens_at)<Date.parse(t.closes_at), "วันปิดรับต้องอยู่หลังวันเปิดรับ");
 const productSchema = z.object({ name: z.string().trim().min(3).max(255), price: z.number().positive().max(10000).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-8), category: z.string().trim().min(1).max(120), active: z.boolean().default(true) });
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       if (!s) throw new ApiError("ไม่พบข้อมูลนักเรียน กรุณาตรวจสอบเลขประจำตัว", 404);
       return s;
     };
-    const getOrders = async (term: Term, id?: string, advisor?: string, filter?: { grade?: string; room?: string; query: string }) => {
+    const getOrders = async (term: Term, id?: string, advisor?: string, filter?: { grade?: string; room?: string; incomplete?: boolean; query: string }) => {
       let where = ` WHERE o.term_id=?${id ? " AND o.student_id=?" : ""}${advisor ? " AND EXISTS(SELECT 1 FROM students s JOIN staff_advisor_rooms ar ON ar.grade=s.grade AND ar.room=s.room WHERE s.student_id=o.student_id AND ar.username=?)" : ""}`;
       const values = [term.term_id,...(id ? [id] : []),...(advisor ? [advisor] : [])];
       if (filter?.grade && filter.room) {
@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
         where += " AND (instr(lower(o.student_name),lower(?))>0 OR instr(lower(o.student_id),lower(?))>0 OR instr(lower(o.order_id),lower(?))>0)";
         values.push(filter.query, filter.query, filter.query);
       }
+      if (filter?.incomplete) where += " AND o.total_amount < o.budget";
       const orders = await rows<Order>(`SELECT o.*,(SELECT ${studentNumberSql} FROM students s WHERE s.student_id=o.student_id AND s.grade=o.grade AND s.room=o.room) student_number FROM orders o` + where + " ORDER BY o.grade,CAST(o.room AS INTEGER),student_number ASC NULLS LAST,o.student_id,o.order_id", ...values);
       if (!orders.length) return [];
       const [items, advisors] = await Promise.all([
@@ -203,9 +204,9 @@ export async function POST(request: NextRequest) {
       return ok({ ...totals, byRoom, productSummary });
     }
     if (action === "adminGetOrders") {
-      const filter = studentFilterSchema.pick({grade:true,room:true,query:true}).parse(a[1] ?? {});
+      const filter = studentFilterSchema.pick({grade:true,room:true,incomplete:true,query:true}).parse(a[1] ?? {});
       if ((filter.grade || filter.room) && !(filter.grade && filter.room)) return ok([]);
-      if (!filter.query && !(filter.grade && filter.room)) return ok([]);
+      if (!filter.query && !filter.incomplete && !(filter.grade && filter.room)) return ok([]);
       return ok(await getOrders(await selectTerm(a[0]), undefined, profile.role === "teacher" ? profile.username : undefined, filter));
     }
     if (action === "adminDeleteOrder" || action === "adminUpdateOrder") {

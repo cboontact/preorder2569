@@ -31,7 +31,7 @@ export function Admin() {
   const [tab, setTab] = useState<Tab>(() => { const key = typeof window === "undefined" ? "summary" : window.location.hash.slice(1); return tabs.some(t => t.key === key) ? key as Tab : "summary"; }); const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null); const [orders, setOrders] = useState<Order[]>([]); const [products, setProducts] = useState<Product[]>([]); const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState(""); const [classes,setClasses] = useState<AdvisorRoom[]>([]);
-  const [search, setSearch] = useState(""); const [grade, setGrade] = useState(""); const [room, setRoom] = useState(""); const [status, setStatus] = useState(""); const [category, setCategory] = useState(""); const [productStatus,setProductStatus] = useState("active");
+  const [search, setSearch] = useState(""); const [grade, setGrade] = useState(""); const [room, setRoom] = useState(""); const [status, setStatus] = useState(""); const [orderStatus, setOrderStatus] = useState(""); const [category, setCategory] = useState(""); const [productStatus,setProductStatus] = useState("active");
   const [receipt, setReceipt] = useState<Order | null>(null); const [roomReport, setRoomReport] = useState(false);
   const [orderEdit, setOrderEdit] = useState<{ order: Order; quantities: Record<number, string> } | null>(null);
   const [editingStudent, setEditingStudent] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function Admin() {
   const [deletion, setDeletion] = useState<{ kind: "product" | "order" | "student"; id: number | string; label: string } | null>(null); const [modalError, setModalError] = useState("");
   useEffect(() => { api<{ profile: AdminProfile }>("checkSession").then(result => { setProfile(result.profile); setAuthenticated(true); }).catch(() => {}).finally(() => setChecking(false)); }, []);
   const hasStudentFilter = !!(grade || room || status || studentSearch);
-  const hasOrderFilter = !!((grade && room) || (!grade && !room && orderSearch));
+  const hasOrderFilter = !!(orderStatus || (grade && room) || (!grade && !room && orderSearch));
   const refresh = useCallback(async (silent = false) => {
     const sequence = ++refreshSequence.current;
     if (!silent) { setLoading(true); if (tab === "students") setStudents([]); if (tab === "orders") setOrders([]); }
@@ -52,7 +52,7 @@ export function Admin() {
       const termId = selectedTerm || periods.find(t => t.is_current)?.term_id;
       if (current.role === "teacher") {
         const orderTab = tab === "orders";
-        const [summaryData, orderData] = await Promise.all([orderTab ? Promise.resolve(null) : api<Summary>("adminGetSummary", termId), orderTab && hasOrderFilter ? api<Order[]>("adminGetOrders", termId, {grade:grade || undefined,room:room || undefined,query:orderSearch}) : Promise.resolve([])]);
+        const [summaryData, orderData] = await Promise.all([orderTab ? Promise.resolve(null) : api<Summary>("adminGetSummary", termId), orderTab && hasOrderFilter ? api<Order[]>("adminGetOrders", termId, {grade:grade || undefined,room:room || undefined,incomplete:orderStatus === "incomplete" || undefined,query:orderSearch}) : Promise.resolve([])]);
         if (sequence !== refreshSequence.current) return;
         setSummary(summaryData); setOrders(orderData); setClasses(current.advisor_rooms); setProducts([]); setStudents([]);
         if (!orderTab && tab !== "summary") setTab("summary");
@@ -60,7 +60,7 @@ export function Admin() {
       }
       const [s, o, p, st, cls] = await Promise.all([
         tab === "summary" ? api<Summary>("adminGetSummary", termId) : Promise.resolve(null),
-        tab === "orders" && hasOrderFilter ? api<Order[]>("adminGetOrders", termId, {grade:grade || undefined,room:room || undefined,query:orderSearch}) : Promise.resolve([]),
+        tab === "orders" && hasOrderFilter ? api<Order[]>("adminGetOrders", termId, {grade:grade || undefined,room:room || undefined,incomplete:orderStatus === "incomplete" || undefined,query:orderSearch}) : Promise.resolve([]),
         tab === "products" ? api<Product[]>("adminGetAllProducts") : Promise.resolve([]),
         tab === "students" && hasStudentFilter ? api<Student[]>("adminGetStudents", termId, {grade:grade || undefined,room:room || undefined,status:status || undefined,query:studentSearch}) : Promise.resolve([]),
         tab === "students" || tab === "orders" ? (classCache.current ? Promise.resolve(classCache.current) : api<AdvisorRoom[]>("adminGetStudentClasses").then(value => { classCache.current = value; return value; })) : Promise.resolve([])
@@ -69,12 +69,12 @@ export function Admin() {
       setSummary(s); setOrders(o); setProducts(p); setStudents(st); setClasses(cls);
     } catch (e) { if (sequence !== refreshSequence.current) return; setError((e as Error).message); if ((e as Error).message.includes("เข้าสู่ระบบ")) setAuthenticated(false); }
     finally { if (sequence === refreshSequence.current) setLoading(false); }
-  }, [selectedTerm,tab,grade,room,status,studentSearch,hasStudentFilter,orderSearch,hasOrderFilter]);
+  }, [selectedTerm,tab,grade,room,status,orderStatus,studentSearch,hasStudentFilter,orderSearch,hasOrderFilter]);
   useEffect(() => { if (authenticated) void refresh(); }, [authenticated, refresh]);
   useEffect(() => {
     if (!authenticated || !profile) return;
     const sync = () => { const key = location.hash.slice(1); if (tabs.some(t => t.key === key) && (profile.role === "superadmin" || key === "summary" || key === "orders")) setTab(key as Tab); else setTab("summary"); };
-    const navigate = () => { sync(); setSearch(""); setOrderSearch(""); setOrders([]); setStudentSearch(""); setStudents([]); setGrade(""); setRoom(""); setStatus(""); setCategory(""); setProductStatus("active"); setError(""); setReceipt(null); setRoomReport(false); };
+    const navigate = () => { sync(); setSearch(""); setOrderSearch(""); setOrders([]); setStudentSearch(""); setStudents([]); setGrade(""); setRoom(""); setStatus(""); setOrderStatus(""); setCategory(""); setProductStatus("active"); setError(""); setReceipt(null); setRoomReport(false); };
     sync(); window.addEventListener("hashchange", navigate); return () => window.removeEventListener("hashchange", navigate);
   }, [authenticated, profile?.role]);
   useEffect(() => {
@@ -92,7 +92,7 @@ export function Admin() {
   const visibleRooms = (summary?.byRoom || []).filter(r => !summaryGrade || r.grade === summaryGrade);
   const filteredStudents = students;
   const filteredProducts = products.filter(p => p.name.includes(search) && (!category || p.category === category) && (productStatus === "all" || !!p.active === (productStatus === "active")));
-  function changeTab(t: Tab) { if (profile?.role === "teacher" && t !== "summary" && t !== "orders") return; history.replaceState(null, "", `#${t}`); window.dispatchEvent(new HashChangeEvent("hashchange")); setTab(t); setSearch(""); setOrderSearch(""); setOrders([]); setStudentSearch(""); setStudents([]); setGrade(""); setRoom(""); setStatus(""); setCategory(""); setProductStatus("active"); setError(""); }
+  function changeTab(t: Tab) { if (profile?.role === "teacher" && t !== "summary" && t !== "orders") return; history.replaceState(null, "", `#${t}`); window.dispatchEvent(new HashChangeEvent("hashchange")); setTab(t); setSearch(""); setOrderSearch(""); setOrders([]); setStudentSearch(""); setStudents([]); setGrade(""); setRoom(""); setStatus(""); setOrderStatus(""); setCategory(""); setProductStatus("active"); setError(""); }
   const printRooms = [...new Set(filteredOrders.map(o => `${o.grade}/${o.room}`))].sort((a, b) => a.localeCompare(b, "th", { numeric: true }));
   if (checking) return <Loading />;
   if (!authenticated) return <div className="panel mx-auto mt-10 max-w-md"><LockKeyhole size={36} className="mb-5 text-sky-700" /><h1>เข้าสู่ระบบครู / ผู้ดูแล</h1><p className="muted mb-6 mt-2">เข้าสู่ระบบด้วยบัญชีที่โรงเรียนกำหนด</p><Notice message={error} /><form onSubmit={login}><label htmlFor="username" className="label">ชื่อผู้ใช้</label><input id="username" autoComplete="username" className="field mb-5" required minLength={3} value={username} onChange={e => setUsername(e.target.value)} /><label htmlFor="password" className="label">รหัสผ่าน</label><div className="relative"><input id="password" autoComplete="current-password" type={showPassword ? "text" : "password"} className="field pr-12" required value={password} onChange={e => setPassword(e.target.value)} /><button type="button" className="absolute right-2 top-2 p-1.5" aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></div><button className="btn mt-6 w-full" disabled={busy}><ActionLogin className="mr-1.5" />{busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}</button></form></div>;
@@ -104,6 +104,7 @@ export function Admin() {
         <button type="button" aria-label="รีเฟรชข้อมูล" title="รีเฟรชข้อมูล" disabled={loading} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100" onClick={() => { setError(""); void refresh(); }}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /></button>
       </div>
     </div></div><Notice message={error} />
+    {tab === "orders" && <div className="mb-4 flex justify-end"><select className="field sm:w-auto" aria-label="ตัวกรองคำสั่งซื้อ" value={orderStatus} onChange={e => { setOrderStatus(e.target.value); setOrders([]); }}><option value="">คำสั่งซื้อทั้งหมด</option><option value="incomplete">ซื้อไม่ครบงบ</option></select></div>}
     {loading && !summary && tab !== "students" ? <Loading /> : <>
       {tab === "summary" && summary && <><div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">{[
         { label: "นักเรียนทั้งหมด", value: summary.totalStudents, unit: "คน", icon: faUserGraduate, color: "border-sky-200 bg-sky-50 text-sky-950", badge: "bg-sky-600" },
