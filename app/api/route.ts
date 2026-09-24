@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     if (action === "getTerms") return ok(await rows<Term>("SELECT * FROM terms ORDER BY is_current DESC,academic_year DESC,semester DESC"));
     // Apply the teacher allowlist before every data endpoint, including public student actions.
     const signedInProfile = token ? await requireSession() : null;
-    if (signedInProfile?.role === "teacher" && !["adminGetSummary", "adminGetOrders"].includes(action)) throw new ApiError("ครูดูได้เฉพาะภาพรวมและสรุปรายการสั่งซื้อของห้องที่ปรึกษา", 403);
+    if (signedInProfile?.role === "teacher" && !["adminGetSummary", "adminGetOrders", "adminDeleteOrder", "adminUpdateOrder", "getProducts"].includes(action)) throw new ApiError("ครูดูได้เฉพาะภาพรวมและสรุปรายการสั่งซื้อของห้องที่ปรึกษา", 403);
     if (action === "getProducts") return ok(await rows<Product>("SELECT * FROM products WHERE active=1 ORDER BY product_id"));
     if (action === "getStudentById") {
       const s = await student(a[0]);
@@ -207,6 +207,31 @@ export async function POST(request: NextRequest) {
       if ((filter.grade || filter.room) && !(filter.grade && filter.room)) return ok([]);
       if (!filter.query && !(filter.grade && filter.room)) return ok([]);
       return ok(await getOrders(await selectTerm(a[0]), undefined, profile.role === "teacher" ? profile.username : undefined, filter));
+    }
+    if (action === "adminDeleteOrder" || action === "adminUpdateOrder") {
+      const id = z.string().min(1).max(80).parse(a[0]);
+      const existing = await first<Order>("SELECT * FROM orders WHERE order_id=?", id);
+      if (!existing) throw new ApiError("ไม่พบคำสั่งซื้อ", 404);
+      if (profile.role === "teacher") {
+        const allowed = await first<{ ok: number }>("SELECT 1 ok FROM staff_advisor_rooms ar JOIN students s ON s.grade=ar.grade AND s.room=ar.room WHERE ar.username=? AND s.student_id=?", profile.username, existing.student_id);
+        if (!allowed) throw new ApiError("ครูไม่มีสิทธิ์จัดการคำสั่งซื้อนี้", 403);
+      }
+      if (action === "adminDeleteOrder") {
+        const result = await db.prepare("DELETE FROM orders WHERE order_id=?").bind(id).run();
+        if (!result.meta.changes) throw new ApiError("ไม่พบคำสั่งซื้อ", 404);
+        return ok();
+      }
+      const items = z.array(z.object({ product_id: z.number().int().positive(), quantity: z.number().int().min(1).max(999) })).min(1).max(100).parse(a[1]);
+      const catalog = await rows<Product>("SELECT * FROM products");
+      let priced: ReturnType<typeof priceOrder>;
+      try { priced = priceOrder(items, catalog.map(p => ({ ...p, active: 1 })), existing.budget); } catch (error) { throw new ApiError((error as Error).message); }
+      const date = new Date().toISOString();
+      await db.batch([
+        db.prepare("UPDATE orders SET total_amount=?,extra_amount=0,unused_budget_acknowledged=?,unused_budget_acknowledged_at=? WHERE order_id=?").bind(priced.total, priced.total < existing.budget ? 1 : 0, priced.total < existing.budget ? date : null, id),
+        db.prepare("DELETE FROM order_items WHERE order_id=?").bind(id),
+        ...priced.lines.map(i => db.prepare("INSERT INTO order_items(order_id,product_id,product_name,price,quantity) VALUES(?,?,?,?,?)").bind(id, i.product_id, i.product_name, i.price, i.quantity))
+      ]);
+      return ok((await getOrders(await selectTerm(existing.term_id), existing.student_id))[0]);
     }
     if (profile.role !== "superadmin") throw new ApiError("เฉพาะผู้ดูแลสูงสุดเท่านั้น", 403);
     switch (action) {
@@ -317,13 +342,6 @@ export async function POST(request: NextRequest) {
       case "deleteProduct": {
         const result = await db.prepare("DELETE FROM products WHERE product_id=?").bind(z.number().int().positive().parse(a[0])).run();
         if (!result.meta.changes) throw new ApiError("ไม่พบสินค้า", 404);
-        return ok();
-      }
-      case "adminDeleteOrder": {
-        const id = z.string().min(1).max(80).parse(a[0]);
-        // Cascading foreign key deletes line items in the same statement.
-        const result = await db.prepare("DELETE FROM orders WHERE order_id=?").bind(id).run();
-        if (!result.meta.changes) throw new ApiError("ไม่พบคำสั่งซื้อ", 404);
         return ok();
       }
       case "addStudent": {
