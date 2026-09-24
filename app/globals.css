@@ -73,3 +73,10 @@
 @media print {
   .room-report-table tfoot { display: table-row-group; }
 }
+
+@media print {
+  body.printing-product-summary > * { visibility: hidden !important; }
+  body.printing-product-summary .print-product-summary,
+  body.printing-product-summary .print-product-summary * { visibility: visible !important; }
+  body.printing-product-summary .print-product-summary { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
+}
