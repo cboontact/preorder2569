@@ -35,7 +35,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/admin#teachers", label: "จัดการครูที่ปรึกษา", icon: GraduationCap },
     { href: "/admin#terms", label: "ภาคเรียน / เปิดรับ", icon: CalendarDays }
   ];
-  const groups = profile?.role === "superadmin"
+  const groups = profile?.role !== "teacher"
     ? [{ label: "จัดการระบบ", links: adminLinks }, { label: "สำหรับนักเรียน", links: links.slice(0, 2) }]
     : profile?.role === "teacher"
       ? [{ label: "ห้องที่ปรึกษา", links: [{ ...adminLinks[0], label: "ภาพรวมและสรุปในห้อง" }, { ...adminLinks[1], label: "คำสั่งซื้อในห้อง" }] }]

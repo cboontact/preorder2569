@@ -1,6 +1,6 @@
 export interface Product { product_id: number; name: string; price: number; category: string; active: number; }
 export interface AdvisorRoom { grade: string; room: string; }
-export interface AdminProfile { username: string; full_name: string; role: "superadmin" | "teacher"; advisor_grade: string; advisor_room: string; advisor_rooms: AdvisorRoom[]; }
+export interface AdminProfile { username: string; full_name: string; role: "superadmin" | "admin" | "teacher"; advisor_grade: string; advisor_room: string; advisor_rooms: AdvisorRoom[]; }
 export interface Teacher extends AdminProfile { active: number; }
 export interface Term { term_id: string; academic_year: number | null; semester: number | null; opens_at: string | null; closes_at: string | null; enabled: number; is_current: number; announcement: string; }
 export interface OrderingPeriod extends Term { status: "open" | "paused" | "scheduled" | "closed"; server_now: string; }

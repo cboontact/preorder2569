@@ -17,7 +17,7 @@ const usernameSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,40}
 const studentSchema = z.object({ student_id: studentIdSchema, prefix: z.string().max(50), first_name: z.string().trim().min(2).max(120), last_name: z.string().trim().min(1).max(120), grade: gradeSchema, room: roomSchema });
 const advisorRoomsSchema = z.array(z.object({ grade: gradeSchema, room: roomSchema })).min(1).max(100).refine(rooms => new Set(rooms.map(r => `${r.grade}/${r.room}`)).size === rooms.length, "ห้องที่ปรึกษาซ้ำกัน");
 const studentFilterSchema = z.object({ grade: gradeSchema.optional(), room: roomSchema.optional(), status: z.enum(["ordered","pending"]).optional(), incomplete: z.boolean().optional(), query: z.string().trim().max(120).default("") });
-const teacherSchema = z.object({ role: z.enum(["teacher","superadmin"]).default("teacher"), full_name: z.string().trim().min(2).max(200), advisor_grade: gradeSchema, advisor_room: roomSchema, advisor_rooms: advisorRoomsSchema.optional(), active: z.boolean().default(true), password: z.string().min(8).max(256).optional() });
+const teacherSchema = z.object({ role: z.enum(["teacher","admin","superadmin"]).default("teacher"), full_name: z.string().trim().min(2).max(200), advisor_grade: gradeSchema, advisor_room: roomSchema, advisor_rooms: advisorRoomsSchema.optional(), active: z.boolean().default(true), password: z.string().min(8).max(256).optional() });
 const termSchema = z.object({ academic_year: z.number().int().min(2500).max(2700), semester: z.union([z.literal(1),z.literal(2)]), opens_at: z.iso.datetime({ offset: true }), closes_at: z.iso.datetime({ offset: true }), enabled: z.boolean(), announcement: z.string().trim().max(500).default("") }).refine(t => Date.parse(t.opens_at)<Date.parse(t.closes_at), "วันปิดรับต้องอยู่หลังวันเปิดรับ");
 const productSchema = z.object({ name: z.string().trim().min(3).max(255), price: z.number().positive().max(10000).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-8), category: z.string().trim().min(1).max(120), active: z.boolean().default(true) });
 class ApiError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       ]);
       return ok((await getOrders(await selectTerm(existing.term_id), existing.student_id))[0]);
     }
-    if (profile.role !== "superadmin") throw new ApiError("เฉพาะผู้ดูแลสูงสุดเท่านั้น", 403);
+    if (profile.role === "teacher") throw new ApiError("เฉพาะผู้ดูแลระบบเท่านั้น", 403);
     switch (action) {
       case "adminGetAllProducts": return ok(await rows<Product>("SELECT * FROM products ORDER BY product_id"));
       case "adminGetStudentClasses": return ok(await rows<AdvisorRoom>("SELECT DISTINCT grade,room FROM students ORDER BY grade,CAST(room AS INTEGER)"));
@@ -284,6 +284,7 @@ export async function POST(request: NextRequest) {
       case "addTeacher": {
         const username = usernameSchema.parse(a[0]);
         const t = teacherSchema.required({ password: true }).parse(a[1]);
+        if (profile.role !== "superadmin" && t.role === "superadmin") throw new ApiError("ผู้ดูแลระบบไม่สามารถสร้างผู้ดูแลสูงสุด",403);
         const hashed = await hashPassword(t.password);
         const rooms = t.advisor_rooms || [{grade:t.advisor_grade,room:t.advisor_room}];
         try { await db.batch([
@@ -297,7 +298,8 @@ export async function POST(request: NextRequest) {
         const username = usernameSchema.parse(a[0]); const t = teacherSchema.parse(a[1]);
         const existing = await first<Teacher>("SELECT role FROM staff WHERE username=?",username);
         if (!existing) throw new ApiError("ไม่พบครูที่ปรึกษา",404);
-        if (existing.role === "superadmin" && !t.active) throw new ApiError("ไม่สามารถปิดบัญชีผู้ดูแลสูงสุดจากเมนูนี้",403);
+        if (existing.role === "superadmin" && (profile.role !== "superadmin" || !t.active || t.role !== "superadmin")) throw new ApiError("ไม่สามารถดำเนินการกับบัญชีผู้ดูแลสูงสุด",403);
+        if (profile.role !== "superadmin" && t.role === "superadmin") throw new ApiError("ผู้ดูแลระบบไม่สามารถตั้งหรือแก้ไขผู้ดูแลสูงสุด",403);
         const hashed = t.password ? await hashPassword(t.password) : null;
         const rooms = t.advisor_rooms || [{grade:t.advisor_grade,room:t.advisor_room}];
         await db.batch([
