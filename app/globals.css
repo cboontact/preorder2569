@@ -80,3 +80,7 @@
   body.printing-product-summary .print-product-summary * { visibility: visible !important; }
   body.printing-product-summary .print-product-summary { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
 }
+.print-summary-header { display: none; }
+@media print {
+  .print-summary-header { display: flex !important; }
+}
