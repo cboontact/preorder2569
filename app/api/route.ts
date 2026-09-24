@@ -17,7 +17,7 @@ const usernameSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,40}
 const studentSchema = z.object({ student_id: studentIdSchema, prefix: z.string().max(50), first_name: z.string().trim().min(2).max(120), last_name: z.string().trim().min(1).max(120), grade: gradeSchema, room: roomSchema });
 const advisorRoomsSchema = z.array(z.object({ grade: gradeSchema, room: roomSchema })).min(1).max(100).refine(rooms => new Set(rooms.map(r => `${r.grade}/${r.room}`)).size === rooms.length, "ห้องที่ปรึกษาซ้ำกัน");
 const studentFilterSchema = z.object({ grade: gradeSchema.optional(), room: roomSchema.optional(), status: z.enum(["ordered","pending"]).optional(), incomplete: z.boolean().optional(), query: z.string().trim().max(120).default("") });
-const teacherSchema = z.object({ full_name: z.string().trim().min(2).max(200), advisor_grade: gradeSchema, advisor_room: roomSchema, advisor_rooms: advisorRoomsSchema.optional(), active: z.boolean().default(true), password: z.string().min(8).max(256).optional() });
+const teacherSchema = z.object({ role: z.enum(["teacher","superadmin"]).default("teacher"), full_name: z.string().trim().min(2).max(200), advisor_grade: gradeSchema, advisor_room: roomSchema, advisor_rooms: advisorRoomsSchema.optional(), active: z.boolean().default(true), password: z.string().min(8).max(256).optional() });
 const termSchema = z.object({ academic_year: z.number().int().min(2500).max(2700), semester: z.union([z.literal(1),z.literal(2)]), opens_at: z.iso.datetime({ offset: true }), closes_at: z.iso.datetime({ offset: true }), enabled: z.boolean(), announcement: z.string().trim().max(500).default("") }).refine(t => Date.parse(t.opens_at)<Date.parse(t.closes_at), "วันปิดรับต้องอยู่หลังวันเปิดรับ");
 const productSchema = z.object({ name: z.string().trim().min(3).max(255), price: z.number().positive().max(10000).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-8), category: z.string().trim().min(1).max(120), active: z.boolean().default(true) });
 class ApiError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
         const hashed = await hashPassword(t.password);
         const rooms = t.advisor_rooms || [{grade:t.advisor_grade,room:t.advisor_room}];
         try { await db.batch([
-          db.prepare("INSERT INTO staff VALUES(?,?,'teacher',?,?,?,?)").bind(username,t.full_name,rooms[0].grade,rooms[0].room,+t.active,hashed),
+          db.prepare("INSERT INTO staff VALUES(?,?,?,?,?,?,?)").bind(username,t.full_name,t.role,rooms[0].grade,rooms[0].room,+t.active,hashed),
           ...rooms.map(r=>db.prepare("INSERT INTO staff_advisor_rooms VALUES(?,?,?)").bind(username,r.grade,r.room))
         ]); }
         catch (error) { if (String(error).includes("UNIQUE")) throw new ApiError("ชื่อผู้ใช้นี้มีอยู่แล้ว",409); throw error; }
@@ -297,11 +297,11 @@ export async function POST(request: NextRequest) {
         const username = usernameSchema.parse(a[0]); const t = teacherSchema.parse(a[1]);
         const existing = await first<Teacher>("SELECT role FROM staff WHERE username=?",username);
         if (!existing) throw new ApiError("ไม่พบครูที่ปรึกษา",404);
-        if (existing.role === "superadmin" && (!t.active || t.password)) throw new ApiError("ไม่สามารถปิดบัญชีหรือเปลี่ยนรหัสผู้ดูแลสูงสุดจากเมนูนี้",403);
+        if (existing.role === "superadmin" && !t.active) throw new ApiError("ไม่สามารถปิดบัญชีผู้ดูแลสูงสุดจากเมนูนี้",403);
         const hashed = t.password ? await hashPassword(t.password) : null;
         const rooms = t.advisor_rooms || [{grade:t.advisor_grade,room:t.advisor_room}];
         await db.batch([
-          db.prepare("UPDATE staff SET full_name=?,advisor_grade=?,advisor_room=?,active=?,password_hash=coalesce(?,password_hash) WHERE username=?").bind(t.full_name,rooms[0].grade,rooms[0].room,+t.active,hashed,username),
+          db.prepare("UPDATE staff SET full_name=?,role=?,advisor_grade=?,advisor_room=?,active=?,password_hash=coalesce(?,password_hash) WHERE username=?").bind(t.full_name,t.role,rooms[0].grade,rooms[0].room,+t.active,hashed,username),
           db.prepare("DELETE FROM staff_advisor_rooms WHERE username=?").bind(username),
           ...rooms.map(r=>db.prepare("INSERT INTO staff_advisor_rooms VALUES(?,?,?)").bind(username,r.grade,r.room)),
           ...(existing.role === "teacher" ? [db.prepare("DELETE FROM admin_sessions WHERE username=?").bind(username)] : [])
