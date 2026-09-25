@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     if (action === "getTerms") return ok(await rows<Term>("SELECT * FROM terms ORDER BY is_current DESC,academic_year DESC,semester DESC"));
     // Apply the teacher allowlist before every data endpoint, including public student actions.
     const signedInProfile = token ? await requireSession() : null;
-    if (signedInProfile?.role === "teacher" && !["adminGetSummary", "adminGetOrders", "adminDeleteOrder", "adminUpdateOrder", "getProducts"].includes(action)) throw new ApiError("ครูดูได้เฉพาะภาพรวมและสรุปรายการสั่งซื้อของห้องที่ปรึกษา", 403);
+    if (signedInProfile?.role === "teacher" && !["adminGetSummary", "adminGetOrders", "adminGetStudents", "adminGetStudentClasses", "adminDeleteOrder", "adminUpdateOrder", "getProducts"].includes(action)) throw new ApiError("ครูดูได้เฉพาะภาพรวมและสรุปรายการสั่งซื้อของห้องที่ปรึกษา", 403);
     if (action === "getProducts") return ok(await rows<Product>("SELECT * FROM products WHERE active=1 ORDER BY product_id"));
     if (action === "getStudentById") {
       const s = await student(a[0]);
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       ]);
       return ok((await getOrders(await selectTerm(existing.term_id), existing.student_id))[0]);
     }
-    if (profile.role === "teacher") throw new ApiError("เฉพาะผู้ดูแลระบบเท่านั้น", 403);
+    if (profile.role === "teacher" && !["adminGetStudents", "adminGetStudentClasses"].includes(action)) throw new ApiError("เฉพาะผู้ดูแลระบบเท่านั้น", 403);
     switch (action) {
       case "adminGetAllProducts": return ok(await rows<Product>("SELECT * FROM products ORDER BY product_id"));
       case "adminGetStudentClasses": return ok(await rows<AdvisorRoom>("SELECT DISTINCT grade,room FROM students ORDER BY grade,CAST(room AS INTEGER)"));
@@ -243,6 +243,7 @@ export async function POST(request: NextRequest) {
         if (!filter.grade && !filter.room && !filter.status && !filter.query) return ok([]);
         const term = await selectTerm(a[0]);
         const clauses: string[] = []; const values: string[] = [term.term_id];
+        if (profile.role === "teacher") { clauses.push("EXISTS(SELECT 1 FROM staff_advisor_rooms ar WHERE ar.username=? AND ar.grade=s.grade AND ar.room=s.room)"); values.push(profile.username); }
         if (filter.grade) { clauses.push("s.grade=?"); values.push(filter.grade); }
         if (filter.room) { clauses.push("s.room=?"); values.push(filter.room); }
         if (filter.status) clauses.push(filter.status === "ordered" ? "o.order_id IS NOT NULL" : "o.order_id IS NULL");
