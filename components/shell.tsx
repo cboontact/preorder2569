@@ -35,11 +35,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/admin#teachers", label: "จัดการครูที่ปรึกษา", icon: GraduationCap },
     { href: "/admin#terms", label: "ภาคเรียน / เปิดรับ", icon: CalendarDays }
   ];
-  const groups = profile?.role !== "teacher"
-    ? [{ label: "จัดการระบบ", links: adminLinks }, { label: "สำหรับนักเรียน", links: links.slice(0, 2) }]
-    : profile?.role === "teacher"
-      ? [{ label: "ห้องที่ปรึกษา", links: [{ ...adminLinks[0], label: "ภาพรวมและสรุปในห้อง" }, { ...adminLinks[1], label: "คำสั่งซื้อในห้อง" }] }]
-      : [{ label: "เมนูหลัก", links }];
+  const groups = profile
+    ? profile.role !== "teacher"
+      ? [{ label: "จัดการระบบ", links: adminLinks }, { label: "สำหรับนักเรียน", links: links.slice(0, 2) }]
+      : [{ label: "ห้องที่ปรึกษา", links: [{ ...adminLinks[0], label: "ภาพรวมและสรุปในห้อง" }, { ...adminLinks[1], label: "คำสั่งซื้อในห้อง" }] }]
+    : [{ label: "เมนูหลัก", links }];
   const isActive = (href: string) => href.includes("#") ? path + (hash || "#summary") === href : path === href && !hash;
   return <div className="min-h-screen">
     {open && <button className="no-print fixed inset-0 z-30 bg-slate-950/50 lg:hidden" aria-label="ปิดเมนู" onClick={() => setOpen(false)} />}
